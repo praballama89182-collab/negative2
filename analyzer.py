@@ -37,7 +37,7 @@ def load_bulk_file(bulk_file_path):
     return sp_df, sb_df
 
 def aggregate_data(sp_df, sb_df):
-    """Combine reports and clean numeric data."""
+    """Combine reports and clean numeric data to prevent 'arg' errors."""
     relevant_cols = ['Customer Search Term', 'Campaign Name', 'Currency', 'Impressions', 'Clicks', 'Spend', 'Sales', 'Orders', 'ACOS', 'CPC']
     frames = []
     
@@ -53,8 +53,9 @@ def aggregate_data(sp_df, sb_df):
 
     final_df = pd.concat(frames, ignore_index=True).fillna(0)
     
-    # Force numeric conversion for all metrics
-    for col in ['Spend', 'Sales', 'Orders', 'ACOS', 'CPC', 'Impressions', 'Clicks']:
+    # FORCE NUMERIC CONVERSION: This prevents the 'arg must be a list' error
+    numeric_cols = ['Spend', 'Sales', 'Orders', 'ACOS', 'CPC', 'Impressions', 'Clicks']
+    for col in numeric_cols:
         final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0)
     
     return final_df
@@ -96,8 +97,8 @@ def perform_ngram_analysis(df, n):
                     'Campaign Name': row['Campaign Name'],
                     'Spend': round(spend, 2),
                     'Sales': round(sales, 2),
-                    'Clicks': row['Clicks'],
-                    'Orders': row['Orders'],
+                    'Clicks': int(row['Clicks']),
+                    'Orders': int(row['Orders']),
                     'ACOS': f"{round(acos_val, 2)}%"
                 })
     return pd.DataFrame(res).sort_values('Spend', ascending=False).reset_index(drop=True)
