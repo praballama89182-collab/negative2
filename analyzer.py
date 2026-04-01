@@ -43,14 +43,14 @@ def aggregate_data(sp_df, sb_df):
     
     return final_df
 
-def is_asin(term):
-    """Checks if a term is an Amazon ASIN (10 chars, starts with B)."""
-    return bool(re.match(r'^b[a-z0-9]{9}$', str(term).lower()))
-
 def format_term(term):
-    """If the search term is an ASIN, return it in UPPERCASE for easy copying."""
-    t_str = str(term)
-    if is_asin(t_str):
+    """
+    Regex to find ASINs (Starts with B, total 10 chars).
+    Forces them to UPPERCASE for easy copying.
+    """
+    t_str = str(term).strip()
+    # Matches any 10-character alphanumeric starting with B/b
+    if re.match(r'^[Bb][Aa-Zz0-9]{9}$', t_str):
         return t_str.upper()
     return t_str
 
@@ -83,16 +83,16 @@ def perform_ngram_analysis(df, n):
         words = str(row['Customer Search Term']).lower().split()
         ngrams = [' '.join(words[i:i+n]) for i in range(len(words) - n + 1)]
         for ng in ngrams:
-            # We skip ASINs in N-Gram analysis because they aren't useful as phrases
-            if not is_asin(ng):
-                spend, sales = float(row['Spend']), float(row['Sales'])
-                acos_calc = (spend / sales * 100) if sales > 0 else 0
-                res.append({
-                    'Term': ng,
-                    'Campaign Name': row['Campaign Name'],
-                    'Spend': round(spend, 2),
-                    'Sales': round(sales, 2),
-                    'Orders': int(row['Orders']),
-                    'ACOS': f"{round(acos_calc, 2)}%"
-                })
+            # Format n-grams too, in case an ASIN appears as a single-word n-gram
+            formatted_ng = format_term(ng)
+            spend, sales = float(row['Spend']), float(row['Sales'])
+            acos_calc = (spend / sales * 100) if sales > 0 else 0
+            res.append({
+                'Term': formatted_ng,
+                'Campaign Name': row['Campaign Name'],
+                'Spend': round(spend, 2),
+                'Sales': round(sales, 2),
+                'Orders': int(row['Orders']),
+                'ACOS': f"{round(acos_calc, 2)}%"
+            })
     return pd.DataFrame(res).sort_values('Spend', ascending=False).reset_index(drop=True)
