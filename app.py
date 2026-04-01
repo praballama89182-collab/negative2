@@ -1,11 +1,12 @@
-import streamlit as st
+import streamlit as st  # Fixes NameError [cite: 181]
 import pandas as pd
-from analyzer import load_bulk_file, aggregate_data, perform_ngram_analysis, get_exact_keyword_analysis, get_repeated_keywords
+from analyzer import (load_bulk_file, aggregate_data, perform_ngram_analysis, 
+                      get_exact_keyword_analysis, get_repeated_keywords, get_auto_to_manual_harvest)
 
 # 1. Page Configuration
 st.set_page_config(page_title="AKOI PPC Analyzer", layout="wide")
 
-# 2. Sidebar for Filters
+# 2. Sidebar for Filters [cite: 233]
 with st.sidebar:
     st.header("⚙️ Settings")
     ngram_sizes = st.multiselect("Select N-Grams to analyze:", [1, 2, 3], default=[1, 2, 3])
@@ -13,7 +14,7 @@ with st.sidebar:
 
 st.title("🚀 Amazon PPC Campaign & Keyword Analyzer")
 
-# 3. File Uploader
+# 3. File Uploader [cite: 234]
 uploaded_file = st.file_uploader("Upload Sponsored Products Search Term Report (.xlsx)", type=["xlsx"])
 
 if uploaded_file:
@@ -21,7 +22,7 @@ if uploaded_file:
         sp_df, sb_df = load_bulk_file(uploaded_file)
         df = aggregate_data(sp_df, sb_df)
 
-        # 4. TOP OVERVIEW DASHBOARD
+        # 4. TOP OVERVIEW DASHBOARD [cite: 231]
         st.header("📊 Account Performance Overview (AED)")
         m1, m2, m3, m4 = st.columns(4)
         total_spend = df['Spend'].sum()
@@ -34,14 +35,14 @@ if uploaded_file:
         m4.metric("Total ACOS", f"{total_acos:.2f}%")
         st.divider()
 
-        # 5. TABBED NAVIGATION
-        tab1, tab2, tab3 = st.tabs(["🎯 Exact Keywords", "✂️ N-Gram Negation", "🔄 Keyword Repeat"])
+        # 5. TABBED NAVIGATION [cite: 161]
+        t1, t2, t3, t4 = st.tabs(["🎯 Exact Keywords", "✂️ N-Gram Negation", "🔄 Keyword Repeat", "🚀 Harvesting Tab"])
 
-        with tab1:
+        with t1:
             st.subheader("Performance by Full Search Term")
             st.dataframe(get_exact_keyword_analysis(df), use_container_width=True)
 
-        with tab2:
+        with t2:
             st.subheader("N-Gram Breakdown (Identify Wasted Spend)")
             if ngram_sizes:
                 cols = st.columns(len(ngram_sizes))
@@ -51,7 +52,7 @@ if uploaded_file:
                         res_df = perform_ngram_analysis(df, size)
                         st.dataframe(res_df.head(100), use_container_width=True)
 
-        with tab3:
+        with t3:
             st.subheader("Duplicate Keywords Across Campaigns")
             repeat_df = get_repeated_keywords(df)
             
@@ -59,13 +60,22 @@ if uploaded_file:
                 try:
                     val = float(str(row.ACOS).replace('%', ''))
                     return ['background-color: #ffcccc' if val > acos_limit else '' for _ in row]
-                except:
-                    return ['' for _ in row]
+                except: return ['' for _ in row]
 
             if not repeat_df.empty:
                 st.dataframe(repeat_df.style.apply(highlight_acos, axis=1), use_container_width=True)
             else:
                 st.info("No repeated keywords found across different campaigns.")
+
+        with t4:
+            st.subheader("Auto-to-Manual Harvesting")
+            st.write("Terms that converted in **Auto** but are missing from **Manual** campaigns.")
+            harvest_df = get_auto_to_manual_harvest(df)
+            if not harvest_df.empty:
+                st.dataframe(harvest_df, use_container_width=True)
+                st.success(f"Found {len(harvest_df)} new high-potential keywords!")
+            else:
+                st.info("No new converting terms found in Auto campaigns.")
 
     except Exception as e:
         st.error(f"Error processing file: {e}")
