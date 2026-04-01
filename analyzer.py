@@ -8,7 +8,6 @@ def load_bulk_file(bulk_file_path):
     excel_file = pd.ExcelFile(bulk_file_path)
     sheet_names = excel_file.sheet_names
     
-    # Mapping for your specific file headers to standard names
     column_mapping = {
         '7 Day Total Sales ': 'Sales',
         '7 Day Total Orders (#)': 'Orders',
@@ -20,7 +19,6 @@ def load_bulk_file(bulk_file_path):
     sp_df = pd.DataFrame()
     sb_df = pd.DataFrame()
 
-    # Look for the sheet names in your uploaded file
     sp_sheet = next((s for s in sheet_names if 'Sponsored_Products' in s or s == 'SP Search Term Report'), None)
     sb_sheet = next((s for s in sheet_names if 'Sponsored_Brands' in s or s == 'SB Search Term Report'), None)
 
@@ -29,14 +27,11 @@ def load_bulk_file(bulk_file_path):
     if sb_sheet:
         sb_df = pd.read_excel(excel_file, sb_sheet).rename(columns=column_mapping)
     
-    if sp_df.empty and sb_df.empty:
-        raise ValueError("No valid PPC data sheets found in the file.")
-        
     return sp_df, sb_df
 
 def aggregate_data(sp_df, sb_df):
-    """Aggregate SP and SB search term data."""
-    relevant_cols = ['Customer Search Term', 'Impressions', 'Clicks', 'Spend', 'Sales', 'Orders', 'ACOS', 'CPC', 'Conversion Rate']
+    """Aggregate data while keeping Campaign Name."""
+    relevant_cols = ['Customer Search Term', 'Campaign Name', 'Impressions', 'Clicks', 'Spend', 'Sales', 'Orders', 'ACOS', 'CPC']
     
     frames = []
     if not sp_df.empty: 
@@ -44,44 +39,42 @@ def aggregate_data(sp_df, sb_df):
     if not sb_df.empty: 
         frames.append(sb_df[[c for c in relevant_cols if c in sb_df.columns]])
     
-    combined_df = pd.concat(frames, ignore_index=True).fillna(0)
-    
-    aggregated = combined_df.groupby('Customer Search Term').agg({
-        'Impressions': 'sum', 
-        'Clicks': 'sum', 
-        'Spend': 'sum', 
-        'Sales': 'sum', 
-        'Orders': 'sum'
-    }).reset_index()
-    
-    aggregated['ACOS'] = np.where(aggregated['Sales'] > 0, (aggregated['Spend'] / aggregated['Sales'] * 100), 0)
-    aggregated['CPC'] = np.where(aggregated['Clicks'] > 0, aggregated['Spend'] / aggregated['Clicks'], 0)
-    return aggregated
+    return pd.concat(frames, ignore_index=True).fillna(0)
 
 def is_asin(term):
-    """Filter out ASINs."""
     return bool(re.match(r'^B[A-Z0-9]{9}$', str(term).upper()))
 
-def perform_ngram_analysis(aggregated_df, n):
-    """Perform mathematical n-gram analysis."""
-    ngram_data = defaultdict(lambda: {'freq': 0, 'impressions': 0, 'clicks': 0, 'spend': 0, 'sales': 0, 'orders': 0})
-    for _, row in aggregated_df.iterrows():
+def perform_ngram_analysis(df, n):
+    """Perform n-gram analysis including Campaign Name mapping."""
+    ngram_data = defaultdict(lambda: {
+        'freq': 0, 'impressions': 0, 'clicks': 0, 'spend': 0, 
+        'sales': 0, 'orders': 0, 'campaigns': set()
+    })
+    
+    for _, row in df.iterrows():
         words = str(row['Customer Search Term']).lower().split()
         ngrams = [' '.join(words[i:i+n]) for i in range(len(words) - n + 1)]
+        
         for ng in ngrams:
             if not is_asin(ng):
                 ngram_data[ng]['freq'] += 1
-                for metric in ['impressions', 'clicks', 'spend', 'sales', 'orders']:
-                    ngram_data[ng][metric] += row[metric.capitalize()]
+                ngram_data[ng]['impressions'] += row['Impressions']
+                ngram_data[ng]['clicks'] += row['Clicks']
+                ngram_data[ng]['spend'] += row['Spend']
+                ngram_data[ng]['sales'] += row['Sales']
+                ngram_data[ng]['orders'] += row['Orders']
+                if 'Campaign Name' in row and row['Campaign Name'] != 0:
+                    ngram_data[ng]['campaigns'].add(str(row['Campaign Name']))
     
     res = []
     for term, m in ngram_data.items():
         res.append({
-            'Term': term, 
+            'Term': term,
+            'Campaigns': ", ".join(list(m['campaigns'])),
             'Frequency': m['freq'], 
             'Spend': round(m['spend'], 2),
             'Orders': m['orders'], 
             'Clicks': m['clicks'],
-            'ACOS': round((m['spend'] / m['sales'] * 100), 2) if m['sales'] > 0 else 0
+            'ACOS': round((m['spend']/m['sales']*100), 2) if m['sales'] > 0 else 0
         })
     return pd.DataFrame(res).sort_values('Spend', ascending=False)
