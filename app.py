@@ -3,7 +3,7 @@ import pandas as pd
 from analyzer import (load_bulk_file, aggregate_data, perform_ngram_analysis, 
                       get_exact_keyword_analysis, get_repeated_keywords, get_auto_to_manual_harvest)
 
-st.set_page_config(page_title="AKOI PPC Analyzer", layout="wide")
+st.set_page_config(page_title="AKOI Global PPC Analyzer", layout="wide")
 
 with st.sidebar:
     st.header("⚙️ Settings")
