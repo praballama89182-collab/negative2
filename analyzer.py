@@ -4,23 +4,30 @@ import re
 from collections import defaultdict
 
 def load_bulk_file(bulk_file_path):
-    """Load and map Amazon-specific headers for AED performance."""
+    """Load and map Amazon headers for both UAE (7-day) and India (14-day) reports."""
     excel_file = pd.ExcelFile(bulk_file_path)
     sheet_names = excel_file.sheet_names
     
-    # Mapping specific 7-day attribution headers to standard names [cite: 122, 134]
+    # Comprehensive mapping for global Amazon Search Term Reports
     column_mapping = {
+        # Sales Mapping
         '7 Day Total Sales ': 'Sales',
+        '14 Day Total Sales (₹)': 'Sales',
+        # Orders Mapping
         '7 Day Total Orders (#)': 'Orders',
+        '14 Day Total Orders (#)': 'Orders',
+        # ACOS Mapping
         'Total Advertising Cost of Sales (ACOS) ': 'ACOS',
+        # CPC Mapping
         'Cost Per Click (CPC)': 'CPC',
-        '7 Day Conversion Rate': 'Conversion Rate'
+        # Conversion Rate Mapping
+        '7 Day Conversion Rate': 'Conversion Rate',
+        '14 Day Conversion Rate': 'Conversion Rate'
     }
 
     sp_df = pd.DataFrame()
     sb_df = pd.DataFrame()
 
-    # Dynamic detection for your specific sheet names [cite: 127]
     sp_sheet = next((s for s in sheet_names if 'Sponsored_Products' in s or s == 'SP Search Term Report'), None)
     sb_sheet = next((s for s in sheet_names if 'Sponsored_Brands' in s or s == 'SB Search Term Report'), None)
 
@@ -32,54 +39,48 @@ def load_bulk_file(bulk_file_path):
     return sp_df, sb_df
 
 def aggregate_data(sp_df, sb_df):
-    """Standardize data and combine SP and SB reports with 2-decimal rounding."""
-    relevant_cols = ['Customer Search Term', 'Campaign Name', 'Impressions', 'Clicks', 'Spend', 'Sales', 'Orders', 'ACOS', 'CPC']
+    """Combine reports with rounding to 2 decimal places."""
+    relevant_cols = ['Customer Search Term', 'Campaign Name', 'Currency', 'Impressions', 'Clicks', 'Spend', 'Sales', 'Orders', 'ACOS', 'CPC']
     frames = []
-    if not sp_df.empty: frames.append(sp_df[[c for c in relevant_cols if c in sp_df.columns]])
-    if not sb_df.empty: frames.append(sb_df[[c for c in relevant_cols if c in sb_df.columns]])
     
-    df = pd.concat(frames, ignore_index=True).fillna(0)
-    # Round metrics to 2 decimal places [cite: 172]
+    for df in [sp_df, sb_df]:
+        if not df.empty:
+            # Ensure missing columns (like Currency) don't crash the concat
+            existing_cols = [c for c in relevant_cols if c in df.columns]
+            frames.append(df[existing_cols])
+    
+    final_df = pd.concat(frames, ignore_index=True).fillna(0)
     for col in ['Spend', 'Sales', 'CPC']:
-        df[col] = df[col].round(2)
-    return df
+        if col in final_df.columns:
+            final_df[col] = final_df[col].round(2)
+    return final_df
 
 def get_exact_keyword_analysis(df):
-    """Returns exact search terms sorted by spend with 2-decimal percentage ACOS."""
     exact_df = df.copy()
     exact_df['ACOS'] = exact_df['ACOS'].apply(lambda x: f"{round(x, 2)}%")
     return exact_df.sort_values('Spend', ascending=False).reset_index(drop=True)
 
 def get_repeated_keywords(df):
-    """Identifies keywords in >1 campaign with 2-decimal rounding."""
     counts = df.groupby('Customer Search Term')['Campaign Name'].transform('nunique')
     repeated_df = df[counts > 1].copy()
     repeated_df['ACOS'] = repeated_df['ACOS'].apply(lambda x: f"{round(x, 2)}%")
     return repeated_df.sort_values(['Customer Search Term', 'Spend'], ascending=[True, False]).reset_index(drop=True)
 
 def get_auto_to_manual_harvest(df):
-    """Identifies converting terms in Auto campaigns missing from Manual campaigns."""
-    # Split data based on campaign naming convention [cite: 23]
     auto_df = df[df['Campaign Name'].str.contains('Auto', case=False, na=False)].copy()
     manual_df = df[~df['Campaign Name'].str.contains('Auto', case=False, na=False)].copy()
-    
     manual_terms = set(manual_df['Customer Search Term'].str.lower().unique())
     
-    # Filter for terms with orders not already in manual campaigns
     harvest_df = auto_df[
-        (~auto_df['Customer Search Term'].str.lower().isin(manual_terms)) & 
-        (auto_df['Orders'] > 0)
+        (~auto_df['Customer Search Term'].str.lower().isin(manual_terms)) & (auto_df['Orders'] > 0)
     ].copy()
-    
     harvest_df['ACOS'] = harvest_df['ACOS'].apply(lambda x: f"{round(x, 2)}%")
     return harvest_df.sort_values('Orders', ascending=False).reset_index(drop=True)
 
 def is_asin(term):
-    """Filter out Amazon ASINs from n-gram results[cite: 54]."""
     return bool(re.match(r'^B[A-Z0-9]{9}$', str(term).upper()))
 
 def perform_ngram_analysis(df, n):
-    """Breaks down search terms into n-grams with 2-decimal rounding[cite: 120]."""
     res = []
     for _, row in df.iterrows():
         words = str(row['Customer Search Term']).lower().split()
