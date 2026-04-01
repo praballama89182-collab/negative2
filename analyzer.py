@@ -1,56 +1,62 @@
-import requests
 import pandas as pd
-from datetime import datetime
+import numpy as np
+from collections import defaultdict
+import re
 
-class KeepaRelevanceAnalyzer:
-    def __init__(self, api_key):
-        """Initialize with Keepa API key."""
-        self.api_key = api_key
-        self.base_url = "https://api.keepa.com/product"
-        self.product_cache = {} [cite: 7]
+def load_bulk_file(bulk_file_path):
+    """Load and parse the bulk file, extracting SP and SB search term reports."""
+    excel_file = pd.ExcelFile(bulk_file_path)
+    sp_df = pd.read_excel(excel_file, 'SP Search Term Report')
+    sb_df = pd.read_excel(excel_file, 'SB Search Term Report')
+    return sp_df, sb_df [cite: 122]
 
-    def fetch_product_data(self, asin):
-        """Fetch product details from Keepa API."""
-        if asin in self.product_cache:
-            return self.product_cache[asin] [cite: 8, 9, 10]
+def aggregate_data(sp_df, sb_df):
+    """Aggregate SP and SB search term data."""
+    relevant_cols = ['Customer Search Term', 'Impressions', 'Clicks', 'Spend', 'Sales', 'Orders', 'ACOS', 'CPC', 'Conversion Rate']
+    combined_df = pd.concat([sp_df[relevant_cols], sb_df[relevant_cols]], ignore_index=True).fillna(0)
+    
+    aggregated = combined_df.groupby('Customer Search Term').agg({
+        'Impressions': 'sum', 
+        'Clicks': 'sum', 
+        'Spend': 'sum', 
+        'Sales': 'sum', 
+        'Orders': 'sum'
+    }).reset_index() [cite: 122, 123]
+    
+    aggregated['ACOS'] = np.where(aggregated['Sales'] > 0, (aggregated['Spend'] / aggregated['Sales'] * 100), 0)
+    aggregated['CPC'] = np.where(aggregated['Clicks'] > 0, aggregated['Spend'] / aggregated['Clicks'], 0)
+    return aggregated [cite: 123]
+
+def is_asin(term):
+    """Check if a term is an ASIN."""
+    return bool(re.match(r'^B[A-Z0-9]{9}$', str(term).upper())) [cite: 123]
+
+def perform_ngram_analysis(aggregated_df, n):
+    """Perform n-gram analysis on the aggregated data."""
+    ngram_data = defaultdict(lambda: {'freq': 0, 'impressions': 0, 'clicks': 0, 'spend': 0, 'sales': 0, 'orders': 0})
+    
+    for _, row in aggregated_df.iterrows():
+        words = str(row['Customer Search Term']).lower().split()
+        ngrams = [' '.join(words[i:i+n]) for i in range(len(words) - n + 1)]
         
-        params = {'key': self.api_key, 'asin': asin, 'domain': 1}
-        try:
-            response = requests.get(self.base_url, params=params, timeout=15)
-            response.raise_for_status()
-            data = response.json() [cite: 12, 13, 14, 15, 16]
-            
-            if data and 'products' in data and data['products']:
-                product = data['products'][0]
-                self.product_cache[asin] = product
-                return product [cite: 19]
-        except Exception as e:
-            print(f"Error fetching ASIN {asin}: {e}") [cite: 22]
-        return None
-
-    def extract_keywords(self, product_data):
-        """Extracts brand, title, and category words for matching."""
-        keywords = set()
-        if not product_data: 
-            return keywords [cite: 26]
-        
-        # Extract from title and brand
-        for field in ['title', 'brand']:
-            if field in product_data:
-                val = str(product_data[field]).lower().split()
-                keywords.update(val) [cite: 27, 36, 37]
-        
-        # Extract from category tree
-        if 'categoryTree' in product_data:
-            for cat in product_data['categoryTree']:
-                if isinstance(cat, dict) and 'name' in cat:
-                    cat_words = str(cat.get('name', '')).lower().split()
-                    keywords.update(cat_words) [cite: 28, 29, 30, 31]
-        return keywords [cite: 38]
-
-    def analyze_relevance(self, ngram, product_keywords):
-        """Checks if the n-gram words exist in product metadata."""
-        ngram_words = set(str(ngram).lower().split())
-        if ngram_words & product_keywords: [cite: 43]
-            return 'Relevant'
-        return 'Irrelevant' [cite: 47]
+        for ng in ngrams:
+            if not is_asin(ng):
+                ngram_data[ng]['freq'] += 1
+                ngram_data[ng]['impressions'] += row['Impressions']
+                ngram_data[ng]['clicks'] += row['Clicks']
+                ngram_data[ng]['spend'] += row['Spend']
+                ngram_data[ng]['sales'] += row['Sales']
+                ngram_data[ng]['orders'] += row['Orders'] [cite: 124]
+    
+    res = []
+    for term, m in ngram_data.items():
+        res.append({
+            'Term': term, 
+            'Frequency': m['freq'], 
+            'Spend': round(m['spend'], 2),
+            'Orders': m['orders'], 
+            'Clicks': m['clicks'],
+            'ACOS': round((m['spend']/m['sales']*100), 2) if m['sales'] > 0 else 0
+        }) [cite: 125]
+    
+    return pd.DataFrame(res).sort_values('Spend', ascending=False) [cite: 125]
