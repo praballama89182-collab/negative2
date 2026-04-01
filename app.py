@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from analyzer import load_bulk_file, aggregate_data, perform_ngram_analysis, get_exact_keyword_analysis, get_repeated_keywords
 
-# 1. Page Configuration [cite: 5]
+# 1. Page Configuration
 st.set_page_config(page_title="AKOI PPC Analyzer", layout="wide")
 
 # 2. Sidebar for Filters
@@ -28,7 +28,6 @@ if uploaded_file:
         total_sales = df['Sales'].sum()
         total_acos = (total_spend / total_sales * 100) if total_sales > 0 else 0
         
-        # Formatting overview metrics to 2 decimals [cite: 54]
         m1.metric("Total Spend", f"{total_spend:,.2f}")
         m2.metric("Total Sales", f"{total_sales:,.2f}")
         m3.metric("Total Orders", int(df['Orders'].sum()))
@@ -58,7 +57,6 @@ if uploaded_file:
             
             def highlight_acos(row):
                 try:
-                    # Convert percentage string (e.g., "75.25%") back to float for comparison [cite: 234]
                     val = float(str(row.ACOS).replace('%', ''))
                     return ['background-color: #ffcccc' if val > acos_limit else '' for _ in row]
                 except:
