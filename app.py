@@ -10,9 +10,9 @@ with st.sidebar:
     ngram_sizes = st.multiselect("Select N-Grams:", [1, 2, 3], default=[1, 2, 3])
     acos_limit = st.slider("Highlight ACOS above %:", 0.0, 200.0, 70.0, step=0.01)
 
-st.title("🚀 Amazon Multi-Brand PPC Analyzer")
+st.title("🚀 Amazon PPC Campaign & Brand Analyzer")
 
-uploaded_file = st.file_uploader("Upload Search Term Report (.xlsx)", type=["xlsx"])
+uploaded_file = st.file_uploader("Upload UAE Search Term Report (.xlsx)", type=["xlsx"])
 
 if uploaded_file:
     try:
@@ -32,7 +32,7 @@ if uploaded_file:
         m4.metric("Total ACOS", f"{t_acos:.2f}%")
         st.divider()
 
-        # 2. BRAND & ASIN OVERVIEW (NO PIE CHART)
+        # 2. BRAND & ASIN OVERVIEW (TABLES)
         st.header("🏷️ Brand & ASIN Performance")
         brand_summary, asin_summary = get_brand_and_asin_data(df)
         
@@ -40,12 +40,16 @@ if uploaded_file:
         with c1:
             st.subheader("Brand Contribution")
             b_display = brand_summary.copy()
+            b_display['Sales'] = b_display['Sales'].map("{:,.2f}".format)
+            b_display['Spend'] = b_display['Spend'].map("{:,.2f}".format)
             b_display['ACOS'] = b_display['ACOS'].map("{:.2f}%".format)
             st.table(b_display)
         
         with c2:
             st.subheader("ASIN Mapping Performance")
             a_display = asin_summary.copy()
+            a_display['Sales'] = a_display['Sales'].map("{:,.2f}".format)
+            a_display['Spend'] = a_display['Spend'].map("{:,.2f}".format)
             a_display['ACOS'] = a_display['ACOS'].map("{:.2f}%".format)
             st.dataframe(a_display, use_container_width=True)
         st.divider()
