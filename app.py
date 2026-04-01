@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from analyzer import (load_bulk_file, aggregate_data, perform_ngram_analysis, 
-                      get_exact_keyword_analysis, get_repeated_keywords, get_auto_to_manual_harvest, get_brand_and_asin_data)
+                      get_exact_keyword_analysis, get_repeated_keywords, get_auto_to_manual_harvest)
 
 st.set_page_config(page_title="AKOI Global PPC Analyzer", layout="wide")
 
@@ -10,9 +10,9 @@ with st.sidebar:
     ngram_sizes = st.multiselect("Select N-Grams:", [1, 2, 3], default=[1, 2, 3])
     acos_limit = st.slider("Highlight ACOS above %:", 0.0, 200.0, 70.0, step=0.01)
 
-st.title("🚀 Amazon PPC Campaign & Brand Analyzer")
+st.title("🚀 Amazon PPC Campaign Analyzer")
 
-uploaded_file = st.file_uploader("Upload UAE Search Term Report (.xlsx)", type=["xlsx"])
+uploaded_file = st.file_uploader("Upload Search Term Report (.xlsx)", type=["xlsx"])
 
 if uploaded_file:
     try:
@@ -32,32 +32,11 @@ if uploaded_file:
         m4.metric("Total ACOS", f"{t_acos:.2f}%")
         st.divider()
 
-        # 2. BRAND & ASIN OVERVIEW (TABLES)
-        st.header("🏷️ Brand & ASIN Performance")
-        brand_summary, asin_summary = get_brand_and_asin_data(df)
-        
-        c1, c2 = st.columns([1, 1.2])
-        with c1:
-            st.subheader("Brand Contribution")
-            b_display = brand_summary.copy()
-            b_display['Sales'] = b_display['Sales'].map("{:,.2f}".format)
-            b_display['Spend'] = b_display['Spend'].map("{:,.2f}".format)
-            b_display['ACOS'] = b_display['ACOS'].map("{:.2f}%".format)
-            st.table(b_display)
-        
-        with c2:
-            st.subheader("ASIN Mapping Performance")
-            a_display = asin_summary.copy()
-            a_display['Sales'] = a_display['Sales'].map("{:,.2f}".format)
-            a_display['Spend'] = a_display['Spend'].map("{:,.2f}".format)
-            a_display['ACOS'] = a_display['ACOS'].map("{:.2f}%".format)
-            st.dataframe(a_display, use_container_width=True)
-        st.divider()
-
-        # 3. ANALYSIS TABS
+        # 2. ANALYSIS TABS
         t1, t2, t3, t4 = st.tabs(["🎯 Exact Keywords", "✂️ N-Gram Negation", "🔄 Keyword Repeat", "🚀 Harvesting"])
 
         with t1:
+            st.subheader("Performance by Full Search Term")
             st.dataframe(get_exact_keyword_analysis(df), use_container_width=True)
 
         with t2:
@@ -69,6 +48,7 @@ if uploaded_file:
                         st.dataframe(perform_ngram_analysis(df, size).head(100), use_container_width=True)
 
         with t3:
+            st.subheader("Duplicate Keywords Across Campaigns")
             rep_df = get_repeated_keywords(df)
             def highlight_acos(row):
                 try:
@@ -80,6 +60,7 @@ if uploaded_file:
             else: st.info("No repeated keywords found.")
 
         with t4:
+            st.subheader("Auto-to-Manual Harvesting")
             harvest_df = get_auto_to_manual_harvest(df)
             if not harvest_df.empty:
                 st.dataframe(harvest_df, use_container_width=True)
