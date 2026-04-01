@@ -1,15 +1,14 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 from analyzer import (load_bulk_file, aggregate_data, perform_ngram_analysis, 
-                      get_exact_keyword_analysis, get_repeated_keywords, get_auto_to_manual_harvest, get_brand_data)
+                      get_exact_keyword_analysis, get_repeated_keywords, get_auto_to_manual_harvest, get_brand_and_asin_data)
 
 st.set_page_config(page_title="AKOI Global PPC Analyzer", layout="wide")
 
 with st.sidebar:
     st.header("⚙️ Settings")
     ngram_sizes = st.multiselect("Select N-Grams:", [1, 2, 3], default=[1, 2, 3])
-    acos_limit = st.slider("Highlight ACOS above %:", 0.0, 200.0, 70.0, step=0.1)
+    acos_limit = st.slider("Highlight ACOS above %:", 0.0, 200.0, 70.0, step=0.01)
 
 st.title("🚀 Amazon Multi-Brand PPC Analyzer")
 
@@ -19,49 +18,51 @@ if uploaded_file:
     try:
         sp_df, sb_df = load_bulk_file(uploaded_file)
         df = aggregate_data(sp_df, sb_df)
-        currency = df['Currency'].iloc[0] if 'Currency' in df.columns and len(df) > 0 else "AED"
 
-        # 1. Main Overview Metrics
-        st.header(f"📊 Account Overview ({currency})")
+        # 1. ACCOUNT OVERVIEW
+        st.header("📊 Account Performance Overview (AED)")
         m1, m2, m3, m4 = st.columns(4)
         t_spend, t_sales = float(df['Spend'].sum()), float(df['Sales'].sum())
+        t_orders = int(df['Orders'].sum())
         t_acos = (t_spend / t_sales * 100) if t_sales > 0 else 0
         
         m1.metric("Total Spend", f"{t_spend:,.2f}")
         m2.metric("Total Sales", f"{t_sales:,.2f}")
-        m3.metric("Total Orders", int(df['Orders'].sum()))
+        m3.metric("Total Orders", t_orders)
         m4.metric("Total ACOS", f"{t_acos:.2f}%")
-
-        # 2. Brand Contribution (Pie Chart & Table)
         st.divider()
-        st.header("🏷️ Brand Level Contribution")
-        brand_df = get_brand_data(df)
+
+        # 2. BRAND & ASIN OVERVIEW (NO PIE CHART)
+        st.header("🏷️ Brand & ASIN Performance")
+        brand_summary, asin_summary = get_brand_and_asin_data(df)
         
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            # Using Pastel colors as requested for light tones
-            fig = px.pie(brand_df, values='Sales', names='Brand', 
-                         title='Sales Contribution by Brand',
-                         color_discrete_sequence=px.colors.qualitative.Pastel)
-            fig.update_traces(textinfo='percent+label')
-            st.plotly_chart(fig, use_container_width=True)
-            
-        with col2:
-            st.write("**Brand Performance Breakdown**")
-            brand_display = brand_df.copy()
-            brand_display['ACOS'] = brand_display['ACOS'].apply(lambda x: f"{x}%")
-            st.table(brand_display)
-
-        # 3. Tabs for Search Term Analysis
+        c1, c2 = st.columns([1, 1.2])
+        with c1:
+            st.subheader("Brand Contribution")
+            b_display = brand_summary.copy()
+            b_display['ACOS'] = b_display['ACOS'].map("{:.2f}%".format)
+            st.table(b_display)
+        
+        with c2:
+            st.subheader("ASIN Mapping Performance")
+            a_display = asin_summary.copy()
+            a_display['ACOS'] = a_display['ACOS'].map("{:.2f}%".format)
+            st.dataframe(a_display, use_container_width=True)
         st.divider()
+
+        # 3. ANALYSIS TABS
         t1, t2, t3, t4 = st.tabs(["🎯 Exact Keywords", "✂️ N-Gram Negation", "🔄 Keyword Repeat", "🚀 Harvesting"])
 
         with t1:
             st.dataframe(get_exact_keyword_analysis(df), use_container_width=True)
 
         with t2:
-            # N-gram analysis columns logic...
-            st.write("N-gram breakdown goes here.")
+            if ngram_sizes:
+                cols = st.columns(len(ngram_sizes))
+                for idx, size in enumerate(ngram_sizes):
+                    with cols[idx]:
+                        st.write(f"**{size}-Gram Analysis**")
+                        st.dataframe(perform_ngram_analysis(df, size).head(100), use_container_width=True)
 
         with t3:
             rep_df = get_repeated_keywords(df)
@@ -72,9 +73,13 @@ if uploaded_file:
                 except: return ['' for _ in row]
             if not rep_df.empty:
                 st.dataframe(rep_df.style.apply(highlight_acos, axis=1), use_container_width=True)
+            else: st.info("No repeated keywords found.")
 
         with t4:
-            st.dataframe(get_auto_to_manual_harvest(df), use_container_width=True)
+            harvest_df = get_auto_to_manual_harvest(df)
+            if not harvest_df.empty:
+                st.dataframe(harvest_df, use_container_width=True)
+            else: st.info("No new converting terms found in Auto.")
 
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"Error processing file: {e}")
