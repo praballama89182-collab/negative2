@@ -20,7 +20,7 @@ def load_bulk_file(bulk_file_path):
     sp_df = pd.DataFrame()
     sb_df = pd.DataFrame()
 
-    # Dynamic sheet detection
+    # Detect sheets automatically [cite: 122, 123]
     sp_sheet = next((s for s in sheet_names if 'Sponsored_Products' in s or s == 'SP Search Term Report'), None)
     sb_sheet = next((s for s in sheet_names if 'Sponsored_Brands' in s or s == 'SB Search Term Report'), None)
 
@@ -32,7 +32,7 @@ def load_bulk_file(bulk_file_path):
     return sp_df, sb_df
 
 def aggregate_data(sp_df, sb_df):
-    """Combine reports while preserving Campaign Name for mapping."""
+    """Keep raw data rows to maintain 1:1 Campaign to Search Term mapping."""
     relevant_cols = ['Customer Search Term', 'Campaign Name', 'Impressions', 'Clicks', 'Spend', 'Sales', 'Orders', 'ACOS', 'CPC']
     
     frames = []
@@ -41,6 +41,7 @@ def aggregate_data(sp_df, sb_df):
     if not sb_df.empty: 
         frames.append(sb_df[[c for c in relevant_cols if c in sb_df.columns]])
     
+    # Return the full combined list without grouping yet 
     return pd.concat(frames, ignore_index=True).fillna(0)
 
 def is_asin(term):
@@ -48,11 +49,8 @@ def is_asin(term):
     return bool(re.match(r'^B[A-Z0-9]{9}$', str(term).upper()))
 
 def perform_ngram_analysis(df, n):
-    """Perform n-gram analysis, merging multiple campaigns and sorting by spend."""
-    ngram_data = defaultdict(lambda: {
-        'freq': 0, 'impressions': 0, 'clicks': 0, 'spend': 0, 
-        'sales': 0, 'orders': 0, 'campaigns': set() # Use set to merge unique names
-    })
+    """Analyze n-grams while keeping a 1:1 relationship with the Campaign Name."""
+    res = []
     
     for _, row in df.iterrows():
         words = str(row['Customer Search Term']).lower().split()
@@ -60,27 +58,15 @@ def perform_ngram_analysis(df, n):
         
         for ng in ngrams:
             if not is_asin(ng):
-                ngram_data[ng]['freq'] += 1
-                ngram_data[ng]['impressions'] += row['Impressions']
-                ngram_data[ng]['clicks'] += row['Clicks']
-                ngram_data[ng]['spend'] += row['Spend']
-                ngram_data[ng]['sales'] += row['Sales']
-                ngram_data[ng]['orders'] += row['Orders']
-                # Merge the campaign name into the set
-                if 'Campaign Name' in row and row['Campaign Name'] != 0:
-                    ngram_data[ng]['campaigns'].add(str(row['Campaign Name']))
+                res.append({
+                    'Term': ng,
+                    'Campaign Name': row['Campaign Name'],
+                    'Spend': round(row['Spend'], 2),
+                    'Clicks': row['Clicks'],
+                    'Orders': row['Orders'],
+                    'ACOS': round(row['ACOS'], 2) if 'ACOS' in row else 0,
+                    'Original Search Term': row['Customer Search Term']
+                })
     
-    res = []
-    for term, m in ngram_data.items():
-        res.append({
-            'Term': term,
-            'Campaigns': ", ".join(list(m['campaigns'])), # Merged names
-            'Frequency': m['freq'], 
-            'Spend': round(m['spend'], 2),
-            'Orders': m['orders'], 
-            'Clicks': m['clicks'],
-            'ACOS': round((m['spend']/m['sales']*100), 2) if m['sales'] > 0 else 0
-        })
-    
-    # Critical: Primary sort by Spend (Descending)
+    # Convert to DataFrame and sort by Spend (Highest First) 
     return pd.DataFrame(res).sort_values('Spend', ascending=False).reset_index(drop=True)
