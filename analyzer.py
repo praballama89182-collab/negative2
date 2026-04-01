@@ -19,6 +19,7 @@ def load_bulk_file(bulk_file_path):
         mapping = {}
         for col in df.columns:
             c_lower = str(col).lower()
+            # Fuzzy match Sales (ignoring advertised/halo specific columns)
             if 'sales' in c_lower and 'advertised' not in c_lower and 'brand halo' not in c_lower:
                 mapping[col] = 'Sales'
             elif 'orders' in c_lower:
@@ -37,7 +38,7 @@ def load_bulk_file(bulk_file_path):
     return sp_df, sb_df
 
 def aggregate_data(sp_df, sb_df):
-    """Combine reports and clean numeric data to prevent 'arg' errors."""
+    """Combine reports and force all metrics to be numeric to prevent crashes."""
     relevant_cols = ['Customer Search Term', 'Campaign Name', 'Currency', 'Impressions', 'Clicks', 'Spend', 'Sales', 'Orders', 'ACOS', 'CPC']
     frames = []
     
@@ -49,20 +50,22 @@ def aggregate_data(sp_df, sb_df):
             frames.append(df[relevant_cols])
     
     if not frames:
-        raise ValueError("No valid PPC data found.")
+        raise ValueError("No valid PPC data found in file.")
 
     final_df = pd.concat(frames, ignore_index=True).fillna(0)
     
-    # FORCE NUMERIC CONVERSION: This prevents the 'arg must be a list' error
+    # CRITICAL FIX: Force every metric column to be a numeric Series
     numeric_cols = ['Spend', 'Sales', 'Orders', 'ACOS', 'CPC', 'Impressions', 'Clicks']
     for col in numeric_cols:
+        # errors='coerce' turns text/errors into NaN, then .fillna(0) makes them 0
         final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0)
     
     return final_df
 
 def get_exact_keyword_analysis(df):
     exact_df = df.copy()
-    exact_df['ACOS'] = exact_df['ACOS'].apply(lambda x: f"{round(float(x) * 100 if x < 1 and x > 0 else x, 2)}%")
+    # Ensure values are float before formatting to string
+    exact_df['ACOS'] = exact_df['ACOS'].apply(lambda x: f"{round(float(x) * 100 if 0 < float(x) < 1 else float(x), 2)}%")
     return exact_df.sort_values('Spend', ascending=False).reset_index(drop=True)
 
 def get_repeated_keywords(df):
