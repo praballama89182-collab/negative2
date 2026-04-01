@@ -3,32 +3,34 @@ import pandas as pd
 from analyzer import (load_bulk_file, aggregate_data, perform_ngram_analysis, 
                       get_exact_keyword_analysis, get_repeated_keywords, get_auto_to_manual_harvest)
 
-st.set_page_config(page_title="AKOI Global PPC Analyzer", layout="wide")
+st.set_page_config(page_title="AKOI PPC Analyzer", layout="wide")
 
 with st.sidebar:
     st.header("⚙️ Settings")
     ngram_sizes = st.multiselect("Select N-Grams:", [1, 2, 3], default=[1, 2, 3])
     acos_limit = st.slider("Highlight ACOS above %:", 0.0, 200.0, 70.0, step=0.01)
 
-st.title("🚀 Amazon Global PPC Analyzer")
+st.title("🚀 Amazon PPC Campaign & Keyword Analyzer")
 
-uploaded_file = st.file_uploader("Upload Search Term Report (.xlsx)", type=["xlsx"])
+uploaded_file = st.file_uploader("Upload UAE Search Term Report (.xlsx)", type=["xlsx"])
 
 if uploaded_file:
     try:
         sp_df, sb_df = load_bulk_file(uploaded_file)
         df = aggregate_data(sp_df, sb_df)
 
-        curr = df['Currency'].iloc[0] if 'Currency' in df.columns and len(df) > 0 else ""
-
-        st.header(f"📊 Overview ({curr})")
+        st.header("📊 Overview (AED)")
         m1, m2, m3, m4 = st.columns(4)
-        t_spend, t_sales = float(df['Spend'].sum()), float(df['Sales'].sum())
+        
+        # Wrapping in float() to ensure metric receives a single scalar, not a Series
+        t_spend = float(df['Spend'].sum())
+        t_sales = float(df['Sales'].sum())
+        t_orders = int(df['Orders'].sum())
         t_acos = (t_spend / t_sales * 100) if t_sales > 0 else 0
         
-        m1.metric("Total Spend", f"{t_spend:,.2f} {curr}")
-        m2.metric("Total Sales", f"{t_sales:,.2f} {curr}")
-        m3.metric("Total Orders", int(df['Orders'].sum()))
+        m1.metric("Total Spend", f"{t_spend:,.2f}")
+        m2.metric("Total Sales", f"{t_sales:,.2f}")
+        m3.metric("Total Orders", t_orders)
         m4.metric("Total ACOS", f"{t_acos:.2f}%")
         st.divider()
 
@@ -57,9 +59,10 @@ if uploaded_file:
             else: st.info("No repeated keywords found.")
 
         with t4:
-            hv_df = get_auto_to_manual_harvest(df)
-            if not hv_df.empty:
-                st.dataframe(hv_df, use_container_width=True)
+            harvest_df = get_auto_to_manual_harvest(df)
+            if not harvest_df.empty:
+                st.dataframe(harvest_df, use_container_width=True)
+                st.success(f"Found {len(harvest_df)} new high-potential keywords!")
             else: st.info("No new converting terms found in Auto.")
 
     except Exception as e:
