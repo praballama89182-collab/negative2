@@ -19,7 +19,6 @@ if uploaded_file:
         sp_df, sb_df = load_bulk_file(uploaded_file)
         df = aggregate_data(sp_df, sb_df)
 
-        # 1. ACCOUNT OVERVIEW
         st.header("📊 Account Performance Overview (AED)")
         m1, m2, m3, m4 = st.columns(4)
         t_spend, t_sales = float(df['Spend'].sum()), float(df['Sales'].sum())
@@ -32,11 +31,9 @@ if uploaded_file:
         m4.metric("Total ACOS", f"{t_acos:.2f}%")
         st.divider()
 
-        # 2. ANALYSIS TABS
         t1, t2, t3, t4 = st.tabs(["🎯 Exact Keywords", "✂️ N-Gram Negation", "🔄 Keyword Repeat", "🚀 Harvesting"])
 
         with t1:
-            st.subheader("Performance by Full Search Term")
             st.dataframe(get_exact_keyword_analysis(df), use_container_width=True)
 
         with t2:
@@ -48,7 +45,6 @@ if uploaded_file:
                         st.dataframe(perform_ngram_analysis(df, size).head(100), use_container_width=True)
 
         with t3:
-            st.subheader("Duplicate Keywords Across Campaigns")
             rep_df = get_repeated_keywords(df)
             def highlight_acos(row):
                 try:
@@ -60,7 +56,6 @@ if uploaded_file:
             else: st.info("No repeated keywords found.")
 
         with t4:
-            st.subheader("Auto-to-Manual Harvesting")
             harvest_df = get_auto_to_manual_harvest(df)
             if not harvest_df.empty:
                 st.dataframe(harvest_df, use_container_width=True)
