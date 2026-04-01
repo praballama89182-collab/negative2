@@ -19,11 +19,12 @@ if uploaded_file:
         sp_df, sb_df = load_bulk_file(uploaded_file)
         df = aggregate_data(sp_df, sb_df)
 
+        # Detect Currency (INR or AED)
         currency = df['Currency'].iloc[0] if 'Currency' in df.columns and len(df) > 0 else "Currency"
 
         st.header(f"📊 Account Performance Overview ({currency})")
         m1, m2, m3, m4 = st.columns(4)
-        t_spend, t_sales = df['Spend'].sum(), df['Sales'].sum()
+        t_spend, t_sales = float(df['Spend'].sum()), float(df['Sales'].sum())
         t_acos = (t_spend / t_sales * 100) if t_sales > 0 else 0
         
         m1.metric("Total Spend", f"{t_spend:,.2f} {currency}")
