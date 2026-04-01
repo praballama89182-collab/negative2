@@ -1,55 +1,45 @@
-import requests
 import pandas as pd
-from datetime import datetime
+import numpy as np
+from collections import defaultdict
+import re
 
-class KeepaRelevanceAnalyzer:
-    def __init__(self, api_key):
-        """Initialize with Keepa API key."""
-        self.api_key = api_key
-        self.base_url = "https://api.keepa.com/product"
-        self.product_cache = {}
+def load_bulk_file(bulk_file_path):
+    excel_file = pd.ExcelFile(bulk_file_path)
+    sp_df = pd.read_excel(excel_file, 'SP Search Term Report')
+    sb_df = pd.read_excel(excel_file, 'SB Search Term Report')
+    return sp_df, sb_df
 
-    def fetch_product_data(self, asin):
-        """Fetch product data from Keepa API."""
-        if asin in self.product_cache:
-            return self.product_cache[asin]
-        
-        params = {'key': self.api_key, 'asin': asin, 'domain': 1}
-        try:
-            response = requests.get(self.base_url, params=params, timeout=15)
-            response.raise_for_status()
-            data = response.json()
-            
-            if data and isinstance(data, dict) and 'products' in data and data['products']:
-                product = data['products'][0]
-                self.product_cache[asin] = product
-                return product
-            return None
-        except Exception as e:
-            print(f"Error fetching ASIN {asin}: {e}")
-            return None
+def aggregate_data(sp_df, sb_df):
+    relevant_cols = ['Customer Search Term', 'Impressions', 'Clicks', 'Spend', 'Sales', 'Orders', 'ACOS', 'CPC', 'Conversion Rate']
+    combined_df = pd.concat([sp_df[relevant_cols], sb_df[relevant_cols]], ignore_index=True).fillna(0)
+    
+    aggregated = combined_df.groupby('Customer Search Term').agg({
+        'Impressions': 'sum', 'Clicks': 'sum', 'Spend': 'sum', 'Sales': 'sum', 'Orders': 'sum'
+    }).reset_index()
+    
+    aggregated['ACOS'] = np.where(aggregated['Sales'] > 0, (aggregated['Spend'] / aggregated['Sales'] * 100), 0)
+    aggregated['CPC'] = np.where(aggregated['Clicks'] > 0, aggregated['Spend'] / aggregated['Clicks'], 0)
+    return aggregated
 
-    def extract_keywords(self, product_data):
-        """Extract relevant keywords from product data."""
-        keywords = set()
-        if not product_data:
-            return keywords
-        
-        for field in ['title', 'brand']:
-            if field in product_data:
-                val = str(product_data[field]).lower().split()
-                keywords.update(val)
-        
-        if 'categoryTree' in product_data:
-            for cat in product_data['categoryTree']:
-                if isinstance(cat, dict) and 'name' in cat:
-                    cat_words = str(cat.get('name', '')).lower().split()
-                    keywords.update(cat_words)
-        return keywords
+def is_asin(term):
+    return bool(re.match(r'^B[A-Z0-9]{9}$', str(term).upper()))
 
-    def analyze_relevance(self, ngram, product_keywords):
-        """Checks if the n-gram words exist in product metadata."""
-        ngram_words = set(str(ngram).lower().split())
-        if ngram_words & product_keywords:
-            return 'Relevant'
-        return 'Irrelevant'
+def perform_ngram_analysis(aggregated_df, n):
+    ngram_data = defaultdict(lambda: {'freq': 0, 'impressions': 0, 'clicks': 0, 'spend': 0, 'sales': 0, 'orders': 0})
+    for _, row in aggregated_df.iterrows():
+        words = str(row['Customer Search Term']).lower().split()
+        ngrams = [' '.join(words[i:i+n]) for i in range(len(words) - n + 1)]
+        for ng in ngrams:
+            if not is_asin(ng):
+                ngram_data[ng]['freq'] += 1
+                for metric in ['impressions', 'clicks', 'spend', 'sales', 'orders']:
+                    ngram_data[ng][metric] += row[metric.capitalize()]
+    
+    res = []
+    for term, m in ngram_data.items():
+        res.append({
+            'Term': term, 'Frequency': m['freq'], 'Spend': round(m['spend'], 2),
+            'Orders': m['orders'], 'Clicks': m['clicks'],
+            'ACOS': round((m['spend']/m['sales']*100), 2) if m['sales'] > 0 else 0
+        })
+    return pd.DataFrame(res).sort_values('Spend', ascending=False)
