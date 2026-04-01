@@ -3,17 +3,14 @@ import numpy as np
 import re
 
 def load_bulk_file(bulk_file_path):
-    """Reverted to UAE-specific mapping with space-strip safety."""
     excel_file = pd.ExcelFile(bulk_file_path)
     sheet_names = excel_file.sheet_names
     
-    # Specific mapping for your UAE Sponsored Products report headers
     column_mapping = {
         '7 Day Total Sales ': 'Sales',
         '7 Day Total Orders (#)': 'Orders',
         'Total Advertising Cost of Sales (ACOS) ': 'ACOS',
-        'Cost Per Click (CPC)': 'CPC',
-        '7 Day Conversion Rate': 'Conversion Rate'
+        'Cost Per Click (CPC)': 'CPC'
     }
 
     sp_df = pd.DataFrame()
@@ -30,24 +27,46 @@ def load_bulk_file(bulk_file_path):
     return sp_df, sb_df
 
 def aggregate_data(sp_df, sb_df):
-    """Combines data and forces numeric types to prevent 'arg' errors."""
-    relevant_cols = ['Customer Search Term', 'Campaign Name', 'Currency', 'Impressions', 'Clicks', 'Spend', 'Sales', 'Orders', 'ACOS', 'CPC']
+    relevant_cols = ['Customer Search Term', 'Campaign Name', 'Spend', 'Sales', 'Orders', 'ACOS']
     frames = []
     for df in [sp_df, sb_df]:
         if not df.empty:
-            # Ensure all relevant columns exist
             for col in relevant_cols:
                 if col not in df.columns:
                     df[col] = 0 if col != 'Customer Search Term' else 'Unknown'
             frames.append(df[relevant_cols])
     
     final_df = pd.concat(frames, ignore_index=True).fillna(0)
-    
-    # Force numeric conversion to ensure they are 1-D arrays (Series)
-    for col in ['Spend', 'Sales', 'Orders', 'ACOS', 'CPC']:
-        final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0).round(2)
-    
+    for col in ['Spend', 'Sales', 'Orders', 'ACOS']:
+        final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0)
     return final_df
+
+def get_brand_data(df):
+    """Maps campaign prefixes to Brand Names and aggregates metrics."""
+    def map_brand(campaign):
+        campaign = str(campaign).upper()
+        if campaign.startswith('PC'): return 'Paris Collection'
+        if campaign.startswith('JPD'): return 'JPD'
+        if campaign.startswith('CL'): return 'Creation Lamis'
+        if campaign.startswith('DC'): return 'Dorall Collection'
+        if campaign.startswith('CPT'): return 'CPT'
+        if campaign.startswith('MA'): return 'Maison'
+        return 'Other'
+
+    brand_df = df.copy()
+    brand_df['Brand'] = brand_df['Campaign Name'].apply(map_brand)
+    
+    summary = brand_df.groupby('Brand').agg({
+        'Sales': 'sum',
+        'Spend': 'sum',
+        'Orders': 'sum'
+    }).reset_index()
+    
+    summary['ACOS'] = (summary['Spend'] / summary['Sales'] * 100).fillna(0).round(2)
+    summary['Sales'] = summary['Sales'].round(2)
+    summary['Spend'] = summary['Spend'].round(2)
+    
+    return summary[summary['Brand'] != 'Other'].sort_values('Sales', ascending=False)
 
 def get_exact_keyword_analysis(df):
     res = df.copy()
@@ -78,13 +97,12 @@ def perform_ngram_analysis(df, n):
         ngrams = [' '.join(words[i:i+n]) for i in range(len(words) - n + 1)]
         for ng in ngrams:
             if not is_asin(ng):
-                spend, sales = float(row['Spend']), float(row['Sales'])
-                acos_calc = (spend / sales * 100) if sales > 0 else 0
+                acos_calc = (row['Spend'] / row['Sales'] * 100) if row['Sales'] > 0 else 0
                 res.append({
                     'Term': ng,
                     'Campaign Name': row['Campaign Name'],
-                    'Spend': round(spend, 2),
-                    'Sales': round(sales, 2),
+                    'Spend': round(row['Spend'], 2),
+                    'Sales': round(row['Sales'], 2),
                     'Clicks': int(row['Clicks']),
                     'Orders': int(row['Orders']),
                     'ACOS': f"{round(acos_calc, 2)}%"
