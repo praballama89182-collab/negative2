@@ -7,7 +7,6 @@ def load_bulk_file(bulk_file_path):
     excel_file = pd.ExcelFile(bulk_file_path)
     sheet_names = excel_file.sheet_names
     
-    # Specific mapping for UAE Search Term Report
     column_mapping = {
         '7 Day Total Sales ': 'Sales',
         '7 Day Total Orders (#)': 'Orders',
@@ -30,14 +29,14 @@ def load_bulk_file(bulk_file_path):
 
 def aggregate_data(sp_df, sb_df):
     """Combine data and force numeric Series types to prevent 'arg' errors."""
-    relevant_cols = ['Customer Search Term', 'Campaign Name', 'Spend', 'Sales', 'Orders', 'ACOS', 'Targeting', 'Currency']
+    relevant_cols = ['Customer Search Term', 'Campaign Name', 'Spend', 'Sales', 'Orders', 'ACOS', 'Clicks']
     frames = []
     for df in [sp_df, sb_df]:
         if not df.empty:
             for col in relevant_cols:
                 if col not in df.columns:
                     df[col] = 0 if col != 'Customer Search Term' else 'Unknown'
-            frames.append(df[[c for c in relevant_cols if c in df.columns]])
+            frames.append(df[relevant_cols])
     
     final_df = pd.concat(frames, ignore_index=True).fillna(0)
     
@@ -46,36 +45,6 @@ def aggregate_data(sp_df, sb_df):
         final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0)
     
     return final_df
-
-def get_brand_and_asin_data(df):
-    """Maps campaign prefixes and ASINs to the 6 specific Brand Names."""
-    def map_brand(campaign):
-        c = str(campaign).upper()
-        if c.startswith('PC'): return 'Paris Collection'
-        if c.startswith('JPD'): return 'JPD'
-        if c.startswith('CL'): return 'Creation Lamis'
-        if c.startswith('DC'): return 'Dorall Collection'
-        if c.startswith('CPT'): return 'CPT'
-        if c.startswith('MA'): return 'Maison'
-        return 'Other'
-
-    brand_df = df.copy()
-    brand_df['Brand'] = brand_df['Campaign Name'].apply(map_brand)
-    
-    # Brand Level Summary
-    brand_summary = brand_df.groupby('Brand').agg({'Sales': 'sum', 'Spend': 'sum', 'Orders': 'sum'}).reset_index()
-    brand_summary['ACOS'] = (brand_summary['Spend'] / brand_summary['Sales'] * 100).replace([np.inf, -np.inf], 0).fillna(0).round(2)
-    
-    # Filter for your 6 brands
-    main_brands = ['Paris Collection', 'JPD', 'Creation Lamis', 'Dorall Collection', 'CPT', 'Maison']
-    brand_summary = brand_summary[brand_summary['Brand'].isin(main_brands)].sort_values('Sales', ascending=False)
-
-    # ASIN Mapping Performance
-    asin_data = brand_df[brand_df['Targeting'].str.match(r'^B[A-Z0-9]{9}$', na=False)].copy()
-    asin_summary = asin_data.groupby(['Brand', 'Targeting']).agg({'Sales': 'sum', 'Spend': 'sum', 'Orders': 'sum'}).reset_index()
-    asin_summary['ACOS'] = (asin_summary['Spend'] / asin_summary['Sales'] * 100).replace([np.inf, -np.inf], 0).fillna(0).round(2)
-    
-    return brand_summary, asin_summary
 
 def get_exact_keyword_analysis(df):
     res = df.copy()
@@ -96,13 +65,16 @@ def get_auto_to_manual_harvest(df):
     harvest['ACOS'] = harvest['ACOS'].apply(lambda x: f"{round(float(x), 2)}%")
     return harvest.sort_values('Orders', ascending=False).reset_index(drop=True)
 
+def is_asin(term):
+    return bool(re.match(r'^B[A-Z0-9]{9}$', str(term).upper()))
+
 def perform_ngram_analysis(df, n):
     res = []
     for _, row in df.iterrows():
         words = str(row['Customer Search Term']).lower().split()
         ngrams = [' '.join(words[i:i+n]) for i in range(len(words) - n + 1)]
         for ng in ngrams:
-            if not bool(re.match(r'^B[A-Z0-9]{9}$', str(ng).upper())):
+            if not is_asin(ng):
                 spend, sales = float(row['Spend']), float(row['Sales'])
                 acos_calc = (spend / sales * 100) if sales > 0 else 0
                 res.append({
