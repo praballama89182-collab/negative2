@@ -45,12 +45,12 @@ def aggregate_data(sp_df, sb_df):
 
 def format_term(term):
     """
-    Regex to find ASINs (Starts with B, total 10 chars).
-    Forces them to UPPERCASE for easy copying.
+    Fixed Regex: Uses A-Za-z0-9 to avoid 'bad character range' error.
+    Forces ASINs starting with B to UPPERCASE.
     """
     t_str = str(term).strip()
-    # Matches any 10-character alphanumeric starting with B/b
-    if re.match(r'^[Bb][Aa-Zz0-9]{9}$', t_str):
+    # Corrected range: A-Z followed by a-z
+    if re.match(r'^[Bb][A-Za-z0-9]{9}$', t_str):
         return t_str.upper()
     return t_str
 
@@ -83,7 +83,6 @@ def perform_ngram_analysis(df, n):
         words = str(row['Customer Search Term']).lower().split()
         ngrams = [' '.join(words[i:i+n]) for i in range(len(words) - n + 1)]
         for ng in ngrams:
-            # Format n-grams too, in case an ASIN appears as a single-word n-gram
             formatted_ng = format_term(ng)
             spend, sales = float(row['Spend']), float(row['Sales'])
             acos_calc = (spend / sales * 100) if sales > 0 else 0
