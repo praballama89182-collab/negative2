@@ -37,7 +37,6 @@ def aggregate_data(sp_df, sb_df):
     if not sb_df.empty: frames.append(sb_df[[c for c in relevant_cols if c in sb_df.columns]])
     
     df = pd.concat(frames, ignore_index=True).fillna(0)
-    # Round metrics to 2 decimal places [cite: 54]
     for col in ['Spend', 'Sales', 'CPC']:
         df[col] = df[col].round(2)
     return df
@@ -49,9 +48,12 @@ def get_exact_keyword_analysis(df):
     return exact_df.sort_values('Spend', ascending=False).reset_index(drop=True)
 
 def get_repeated_keywords(df):
-    """Identifies keywords that appear in more than one campaign with 2-decimal formatting."""
+    """Identifies keywords in >1 campaign with 2-decimal rounding for all metrics."""
     counts = df.groupby('Customer Search Term')['Campaign Name'].transform('nunique')
     repeated_df = df[counts > 1].copy()
+    # Explicitly round currency for the repeat tab
+    repeated_df['Spend'] = repeated_df['Spend'].round(2)
+    repeated_df['Sales'] = repeated_df['Sales'].round(2)
     repeated_df['ACOS'] = repeated_df['ACOS'].apply(lambda x: f"{round(x, 2)}%")
     return repeated_df.sort_values(['Customer Search Term', 'Spend'], ascending=[True, False]).reset_index(drop=True)
 
