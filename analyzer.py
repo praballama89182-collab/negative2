@@ -1,14 +1,13 @@
 import pandas as pd
 import numpy as np
-from collections import defaultdict
 import re
 
 def load_bulk_file(bulk_file_path):
-    """Load and parse the bulk file, handling specific Amazon headers and sheet names."""
+    """Load the file and map your specific Amazon column names."""
     excel_file = pd.ExcelFile(bulk_file_path)
     sheet_names = excel_file.sheet_names
     
-    # Mapping for your specific file headers to standard names
+    # Mapping your specific headers to names the app understands
     column_mapping = {
         '7 Day Total Sales ': 'Sales',
         '7 Day Total Orders (#)': 'Orders',
@@ -20,7 +19,7 @@ def load_bulk_file(bulk_file_path):
     sp_df = pd.DataFrame()
     sb_df = pd.DataFrame()
 
-    # Detect sheets automatically [cite: 122, 123]
+    # Detect your Sponsored Products sheet
     sp_sheet = next((s for s in sheet_names if 'Sponsored_Products' in s or s == 'SP Search Term Report'), None)
     sb_sheet = next((s for s in sheet_names if 'Sponsored_Brands' in s or s == 'SB Search Term Report'), None)
 
@@ -32,7 +31,7 @@ def load_bulk_file(bulk_file_path):
     return sp_df, sb_df
 
 def aggregate_data(sp_df, sb_df):
-    """Keep raw data rows to maintain 1:1 Campaign to Search Term mapping."""
+    """Combine data while keeping all rows for detailed campaign analysis."""
     relevant_cols = ['Customer Search Term', 'Campaign Name', 'Impressions', 'Clicks', 'Spend', 'Sales', 'Orders', 'ACOS', 'CPC']
     
     frames = []
@@ -41,15 +40,14 @@ def aggregate_data(sp_df, sb_df):
     if not sb_df.empty: 
         frames.append(sb_df[[c for c in relevant_cols if c in sb_df.columns]])
     
-    # Return the full combined list without grouping yet 
     return pd.concat(frames, ignore_index=True).fillna(0)
 
 def is_asin(term):
-    """Filter out ASINs from the keyword analysis."""
+    """Exclude ASINs from the keyword list."""
     return bool(re.match(r'^B[A-Z0-9]{9}$', str(term).upper()))
 
 def perform_ngram_analysis(df, n):
-    """Analyze n-grams while keeping a 1:1 relationship with the Campaign Name."""
+    """Analyze every search term and keep the campaign context."""
     res = []
     
     for _, row in df.iterrows():
@@ -62,11 +60,12 @@ def perform_ngram_analysis(df, n):
                     'Term': ng,
                     'Campaign Name': row['Campaign Name'],
                     'Spend': round(row['Spend'], 2),
+                    'Sales': round(row['Sales'], 2), # Fixed: Now correctly maps from your file
                     'Clicks': row['Clicks'],
                     'Orders': row['Orders'],
                     'ACOS': round(row['ACOS'], 2) if 'ACOS' in row else 0,
-                    'Original Search Term': row['Customer Search Term']
+                    'Search Term': row['Customer Search Term']
                 })
     
-    # Convert to DataFrame and sort by Spend (Highest First) 
+    # Sort by Spend (Highest first) to find wasted budget quickly
     return pd.DataFrame(res).sort_values('Spend', ascending=False).reset_index(drop=True)
