@@ -28,7 +28,6 @@ def load_bulk_file(bulk_file_path):
     return sp_df, sb_df
 
 def aggregate_data(sp_df, sb_df):
-    """Combine data and force numeric Series types to prevent 'arg' errors."""
     relevant_cols = ['Customer Search Term', 'Campaign Name', 'Spend', 'Sales', 'Orders', 'ACOS', 'Clicks']
     frames = []
     for df in [sp_df, sb_df]:
@@ -39,21 +38,32 @@ def aggregate_data(sp_df, sb_df):
             frames.append(df[relevant_cols])
     
     final_df = pd.concat(frames, ignore_index=True).fillna(0)
-    
-    # Force metrics to numeric to ensure they are 1-D arrays (Series)
     for col in ['Spend', 'Sales', 'Orders', 'ACOS']:
         final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0)
     
     return final_df
 
+def is_asin(term):
+    """Checks if a term is an Amazon ASIN (10 chars, starts with B)."""
+    return bool(re.match(r'^b[a-z0-9]{9}$', str(term).lower()))
+
+def format_term(term):
+    """If the search term is an ASIN, return it in UPPERCASE for easy copying."""
+    t_str = str(term)
+    if is_asin(t_str):
+        return t_str.upper()
+    return t_str
+
 def get_exact_keyword_analysis(df):
     res = df.copy()
+    res['Customer Search Term'] = res['Customer Search Term'].apply(format_term)
     res['ACOS'] = res['ACOS'].apply(lambda x: f"{round(float(x) * 100 if 0 < float(x) < 1 else float(x), 2)}%")
     return res.sort_values('Spend', ascending=False).reset_index(drop=True)
 
 def get_repeated_keywords(df):
     counts = df.groupby('Customer Search Term')['Campaign Name'].transform('nunique')
     rep = df[counts > 1].copy()
+    rep['Customer Search Term'] = rep['Customer Search Term'].apply(format_term)
     rep['ACOS'] = rep['ACOS'].apply(lambda x: f"{round(float(x), 2)}%")
     return rep.sort_values(['Customer Search Term', 'Spend'], ascending=[True, False]).reset_index(drop=True)
 
@@ -62,11 +72,10 @@ def get_auto_to_manual_harvest(df):
     manual = df[~df['Campaign Name'].str.contains('Auto', case=False, na=False)].copy()
     m_terms = set(manual['Customer Search Term'].str.lower().unique())
     harvest = auto[(~auto['Customer Search Term'].str.lower().isin(m_terms)) & (auto['Orders'] > 0)].copy()
+    
+    harvest['Customer Search Term'] = harvest['Customer Search Term'].apply(format_term)
     harvest['ACOS'] = harvest['ACOS'].apply(lambda x: f"{round(float(x), 2)}%")
     return harvest.sort_values('Orders', ascending=False).reset_index(drop=True)
-
-def is_asin(term):
-    return bool(re.match(r'^B[A-Z0-9]{9}$', str(term).upper()))
 
 def perform_ngram_analysis(df, n):
     res = []
@@ -74,6 +83,7 @@ def perform_ngram_analysis(df, n):
         words = str(row['Customer Search Term']).lower().split()
         ngrams = [' '.join(words[i:i+n]) for i in range(len(words) - n + 1)]
         for ng in ngrams:
+            # We skip ASINs in N-Gram analysis because they aren't useful as phrases
             if not is_asin(ng):
                 spend, sales = float(row['Spend']), float(row['Sales'])
                 acos_calc = (spend / sales * 100) if sales > 0 else 0
